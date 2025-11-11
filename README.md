@@ -1,4 +1,4 @@
-# FSAE Logger Data Dashboard Playback
+# FSAE Data Logger Dashboard Playback
 
 此專案將影片播放與車輛感測資料（CSV）同步，透過一個可互動的 Matplotlib 儀表板顯示多個參數（例如 rpm、溫度、踏板位置等），並以影片播放比例驅動時間軸上的游標。
 
