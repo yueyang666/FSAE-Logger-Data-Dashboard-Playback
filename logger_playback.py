@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 
 import cv2
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -64,103 +65,73 @@ class SharedState:
 
 
 def run_video_thread(state: SharedState, video_path: str) -> None:
-    """
-    影片+音訊播放執行緒（無滑桿版）。
-    控制方式：
-      空白鍵 / p  暫停/播放
-      ← / →       單幀或一秒移動
-      ESC / q     離開
-    """
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"無法開啟影片：{video_path}")
-        state.set_quit()
-        return
+        exit()
 
     player = MediaPlayer(video_path)
     player.set_volume(0.3)
-    
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
     fps = cap.get(cv2.CAP_PROP_FPS) or 33.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     delay_ms = int(max(1, 1000.0 / fps))
-    state.set_total(total)
+    val = ''
+    frame_idx = 0
+    state.set_total(total_frames)
+
 
     win = "Video Player"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-
-    last_frame = None  # 暫停時維持最後畫面
-
     print("控制方式：空白鍵(p)=暫停/播放")
 
-    while True:
-        idx, tot, paused, quit_flag = state.snapshot()
-        if quit_flag:
-            break
+    while val != 'eof':
 
-        if not paused:
-            ret, frame = cap.read()
-            audio_frame, val = player.get_frame()
+        frame, val = player.get_frame()
+        if val != 'eof' and frame is not None:
+            img, t = frame
+            w, h = img.get_size()
+            buf = img.to_bytearray()[0]
+            rgb = np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 3)
+            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            cv2.imshow(win, bgr)
 
-            if not ret:
-                state.set_quit()
-                break
+            # PTS → frame index
+            frame_idx = int(t * fps)
+            state.set_idx(frame_idx)
 
-            last_frame = frame
-            cv2.imshow(win, frame)
-            current_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-            state.set_idx(current_pos)
+        # 等待鍵盤輸入（33ms）
+        key = cv2.waitKey(delay_ms) & 0xFF
 
-            if val != 'eof' and audio_frame is not None:
-                _img, _t = audio_frame
-        else:
-            if last_frame is not None:
-                cv2.imshow(win, last_frame)
-
-        key = cv2.waitKey(delay_ms if not paused else 10) & 0xFF
         if key in (27, ord('q'), ord('Q')):     # ESC 或 q / Q
             state.set_quit()
             break
 
         elif key in (ord('p'), ord('P'), 32):   # 空白鍵 或 p / P
-            new_p = not paused
-            state.set_paused(new_p)
-            player.set_pause(new_p)
+            player.toggle_pause()
+            state.set_paused(player.get_pause())
 
-        # elif key in (ord('a'), ord('A')):  # a / A
-        #     new_idx = state.step(int(-fps))  # 往前一秒
-        #     cap.set(cv2.CAP_PROP_POS_FRAMES, new_idx)
-        #     current_time = new_idx / fps
+        elif key in (ord('a'), ord('A')):        # a / A
+            player.seek(-1.0, relative=True)
 
-        #     player.set_pause(True)
-        #     player.seek(max(0.0, current_time), relative=False)
-        #     time.sleep(0.05)  # 等待 ffpyplayer 內部解碼器穩定
-        #     player.set_pause(paused)
-        #     print(f"跳到 {current_time:.2f} 秒")
+        elif key in (ord('d'), ord('D')):         # d / D
+            player.seek(1.0, relative=True)
 
-        # elif key in (ord('d'), ord('D')):  # d / D
-        #     new_idx = state.step(int(fps))   # 往後一秒
-        #     cap.set(cv2.CAP_PROP_POS_FRAMES, new_idx)
-        #     current_time = new_idx / fps
-
-        #     player.set_pause(True)
-        #     player.seek(min(current_time, total / fps - 0.1), relative=False)
-        #     time.sleep(0.05)
-        #     player.set_pause(paused)
-        #     print(f"跳到 {current_time:.2f} 秒")
-
-        elif key in (ord('s'), ord('S')):  # s / S 降低音量
+        elif key in (ord('s'), ord('S')):       # s / S 降低音量
             vol = max(0.0, player.get_volume() - 0.1)
             player.set_volume(vol)
             print(f"音量: {vol:.1f}")
 
-        elif key in (ord('w'), ord('W')):  # w / W 提高音量
+        elif key in (ord('w'), ord('W')):       # w / W 提高音量
             vol = min(1.0, player.get_volume() + 0.1)
             player.set_volume(vol)
             print(f"音量: {vol:.1f}")
-    
+
     cap.release()
-    cv2.destroyWindow(win)
-    
+    cv2.destroyAllWindows()
+    player.close_player()
+        
 
 def main():
     # === 讀取 CSV ===
