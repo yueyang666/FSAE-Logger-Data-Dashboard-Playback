@@ -16,7 +16,7 @@
 
 建議使用虛擬環境（Conda / Miniconda）。主要 Python 套件：
 
-- Python 3.10
+- Python 3.10.19
 - opencv-python
 - numpy
 - pandas
